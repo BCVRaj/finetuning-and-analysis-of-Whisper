@@ -28,9 +28,11 @@ Usage:
 import logging
 from collections import Counter
 from difflib import SequenceMatcher
+from typing import Dict, List, Set
 
-import editdistance
 from jiwer import wer as standard_wer
+# Note: editdistance is NOT used here — SequenceMatcher handles word alignment.
+# Use editdistance only if you need character-level edit distance externally.
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
@@ -39,7 +41,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 # Numeric Variant Mapping (digit ↔ Hindi word form)
 # ---------------------------------------------------------------------------
 
-DIGIT_TO_HINDI: dict[str, str] = {
+DIGIT_TO_HINDI: Dict[str, str] = {
     "0": "शून्य",
     "1": "एक",
     "2": "दो",
@@ -64,16 +66,16 @@ DIGIT_TO_HINDI: dict[str, str] = {
     "1000": "हज़ार",
 }
 
-HINDI_TO_DIGIT: dict[str, str] = {v: k for k, v in DIGIT_TO_HINDI.items()}
+HINDI_TO_DIGIT: Dict[str, str] = {v: k for k, v in DIGIT_TO_HINDI.items()}
 
 
-def get_numeric_variants(alternatives: set) -> set:
+def get_numeric_variants(alternatives: Set[str]) -> Set[str]:
     """
     Expands a set of word alternatives with their numeric counterparts.
 
     E.g. if "चौदह" is in the set, adds "14"; if "14" is in the set, adds "चौदह".
     """
-    extras: set = set()
+    extras: Set[str] = set()
     for alt in alternatives:
         if alt in DIGIT_TO_HINDI:
             extras.add(DIGIT_TO_HINDI[alt])
@@ -87,7 +89,7 @@ def get_numeric_variants(alternatives: set) -> set:
 # ---------------------------------------------------------------------------
 
 
-def align_hypothesis_to_reference(reference: list, hypothesis: list) -> dict[int, str]:
+def align_hypothesis_to_reference(reference: List[str], hypothesis: List[str]) -> Dict[int, str]:
     """
     Aligns hypothesis words to reference positions using SequenceMatcher.
 
@@ -96,7 +98,7 @@ def align_hypothesis_to_reference(reference: list, hypothesis: list) -> dict[int
         Only positions with a matched hypothesis word are included.
     """
     matcher = SequenceMatcher(None, reference, hypothesis, autojunk=False)
-    alignment: dict[int, str] = {}
+    alignment: Dict[int, str] = {}
 
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag in ("equal", "replace"):
@@ -112,10 +114,10 @@ def align_hypothesis_to_reference(reference: list, hypothesis: list) -> dict[int
 
 
 def build_lattice(
-    model_outputs: list[list[str]],
-    reference: list[str],
+    model_outputs: List[List[str]],
+    reference: List[str],
     consensus_threshold: int = 4,
-) -> list[set]:
+) -> List[Set[str]]:
     """
     Constructs a word-level lattice from multiple model outputs and the human reference.
 
@@ -145,10 +147,10 @@ def build_lattice(
     alignments = [
         align_hypothesis_to_reference(reference, hyp) for hyp in model_outputs
     ]
-    lattice: list[set] = []
+    lattice: List[Set[str]] = []
 
     for pos in range(len(reference)):
-        bin_set: set = {reference[pos]}
+        bin_set: Set[str] = {reference[pos]}
 
         # Collect all model hypotheses at this position
         hyp_words_at_pos = [a[pos] for a in alignments if pos in a]
@@ -176,7 +178,7 @@ def build_lattice(
 # ---------------------------------------------------------------------------
 
 
-def lattice_wer(lattice: list[set], hypothesis: list[str]) -> float:
+def lattice_wer(lattice: List[Set[str]], hypothesis: List[str]) -> float:
     """
     Computes Lattice-WER for a single hypothesis against a pre-built lattice.
 
@@ -210,11 +212,11 @@ def lattice_wer(lattice: list[set], hypothesis: list[str]) -> float:
 
 
 def evaluate_all_models(
-    model_outputs: list[list[str]],
-    model_names: list[str],
-    reference_tokens: list[str],
+    model_outputs: List[List[str]],
+    model_names: List[str],
+    reference_tokens: List[str],
     consensus_threshold: int = 4,
-) -> list[dict]:
+) -> List[dict]:
     """
     Evaluates all models on a single reference with both standard WER and Lattice-WER.
 
@@ -233,7 +235,7 @@ def evaluate_all_models(
 
     reference_str = " ".join(reference_tokens)
     lattice = build_lattice(model_outputs, reference_tokens, consensus_threshold)
-    results: list[dict] = []
+    results: List[dict] = []
 
     for name, hyp_tokens in zip(model_names, model_outputs):
         std = standard_wer(reference_str, " ".join(hyp_tokens))
@@ -252,7 +254,7 @@ def evaluate_all_models(
     return results
 
 
-def print_results_table(results: list[dict]) -> None:
+def print_results_table(results: List[dict]) -> None:
     """Pretty-prints the evaluation results table."""
     header = f"{'Model':<30} {'Std WER':>10} {'Lat WER':>10} {'Delta':>8} {'Verdict'}"
     print(f"\n{'='*90}")

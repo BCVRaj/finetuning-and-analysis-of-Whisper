@@ -20,7 +20,7 @@ Usage:
 import re
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 from utils import load_hindi_wordlist
 
@@ -42,34 +42,34 @@ LOANWORDS_PATH = HINDI_DICT_DIR / "loanwords_devanagari.txt"
 # ---------------------------------------------------------------------------
 
 # Core number dictionaries (Devanagari → integer)
-HINDI_UNITS: dict[str, int] = {
+HINDI_UNITS: Dict[str, int] = {
     "एक": 1, "दो": 2, "तीन": 3, "चार": 4, "पाँच": 5, "छह": 6,
     "सात": 7, "आठ": 8, "नौ": 9, "दस": 10, "ग्यारह": 11, "बारह": 12,
     "तेरह": 13, "चौदह": 14, "पंद्रह": 15, "सोलह": 16, "सत्रह": 17,
     "अठारह": 18, "उन्नीस": 19,
 }
 
-HINDI_TENS: dict[str, int] = {
+HINDI_TENS: Dict[str, int] = {
     "बीस": 20, "तीस": 30, "चालीस": 40, "पचास": 50,
     "साठ": 60, "सत्तर": 70, "अस्सी": 80, "नब्बे": 90,
 }
 
-HINDI_COMPOUND: dict[str, int] = {
+HINDI_COMPOUND: Dict[str, int] = {
     "पच्चीस": 25, "पैंतीस": 35, "पैंतालीस": 45, "पचपन": 55,
     "पैंसठ": 65, "पचहत्तर": 75, "पचासी": 85, "पचानवे": 95,
     "इक्कीस": 21, "बाईस": 22, "तेईस": 23, "चौबीस": 24,
 }
 
-HINDI_MULTIPLIERS: dict[str, int] = {
+HINDI_MULTIPLIERS: Dict[str, int] = {
     "सौ": 100, "हज़ार": 1_000, "लाख": 100_000, "करोड़": 10_000_000,
 }
 
 # Combined lookup for standalone number words
-ALL_NUMBER_WORDS: dict[str, int] = {**HINDI_UNITS, **HINDI_TENS, **HINDI_COMPOUND}
+ALL_NUMBER_WORDS: Dict[str, int] = {**HINDI_UNITS, **HINDI_TENS, **HINDI_COMPOUND}
 
 # Idiomatic expressions that must NOT be converted
 # e.g. "दो-चार बातें" = "a few things" (not "2-4 things")
-IDIOM_PATTERNS: list[str] = [
+IDIOM_PATTERNS: List[str] = [
     r"दो-चार",     # "a few"
     r"चार-पाँच",   # "four or five" (idiomatic)
     r"तीन-चार",    # "three or four"
@@ -112,7 +112,7 @@ def normalize_numbers(text: str) -> str:
         '1000 रुपये दिए'
     """
     # Step 1: Freeze idioms with unique placeholders
-    frozen: dict[str, str] = {}
+    frozen: Dict[str, str] = {}
     for i, pattern in enumerate(IDIOM_PATTERNS):
         placeholder = f"__IDIOM{i}__"
         match = re.search(pattern, text)

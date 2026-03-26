@@ -23,7 +23,7 @@ import logging
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 from symspellpy import SymSpell, Verbosity
 
@@ -51,7 +51,7 @@ LOANWORDS_PATH = HINDI_DICT_DIR / "loanwords_devanagari.txt"
 _DEVANAGARI_WORD_RE = re.compile(r"[\u0900-\u097F]+")
 
 
-def build_hindi_frequency_dict(corpus_files: list[str], output_path: str) -> None:
+def build_hindi_frequency_dict(corpus_files: List[str], output_path: str) -> None:
     """
     Builds a SymSpell-compatible frequency dictionary from raw Hindi text corpora.
 
@@ -66,7 +66,7 @@ def build_hindi_frequency_dict(corpus_files: list[str], output_path: str) -> Non
         corpus_files: List of paths to plain-text Hindi corpus files (UTF-8).
         output_path: Output path for the frequency dictionary.
     """
-    word_counts: Counter = Counter()
+    word_counts: Counter[str] = Counter()
 
     for filepath in corpus_files:
         logger.info(f"Processing corpus: {filepath}")
@@ -89,7 +89,7 @@ def build_hindi_frequency_dict(corpus_files: list[str], output_path: str) -> Non
 # ---------------------------------------------------------------------------
 
 
-def init_symspell(frequency_dict_path: str) -> tuple[SymSpell, dict[str, int]]:
+def init_symspell(frequency_dict_path: str) -> Tuple[SymSpell, Dict[str, int]]:
     """
     Initialises SymSpell with the Hindi frequency dictionary.
 
@@ -107,7 +107,7 @@ def init_symspell(frequency_dict_path: str) -> tuple[SymSpell, dict[str, int]]:
         raise FileNotFoundError(f"Could not load SymSpell dictionary from {frequency_dict_path}")
 
     # Build a plain frequency dict for fast lookup
-    freq_dict: dict[str, int] = {}
+    freq_dict: Dict[str, int] = {}
     try:
         with open(frequency_dict_path, encoding="utf-8") as f:
             for line in f:
@@ -141,7 +141,7 @@ class HindiSpellChecker:
     def __init__(
         self,
         symspell: SymSpell,
-        freq_dict: dict[str, int],
+        freq_dict: Dict[str, int],
         hindi_wordnet: set,
         loan_whitelist: set,
     ) -> None:
@@ -213,7 +213,7 @@ class HindiSpellChecker:
     def _result(word: str, label: str, confidence: str, reason: str) -> dict:
         return {"word": word, "label": label, "confidence": confidence, "reason": reason}
 
-    def classify_batch(self, words: list[str]) -> list[dict]:
+    def classify_batch(self, words: List[str]) -> List[dict]:
         """Classifies a list of words and returns results + summary statistics."""
         results = [self.classify(w) for w in words]
         correct = sum(1 for r in results if r["label"] == "correct")
@@ -225,7 +225,7 @@ class HindiSpellChecker:
         )
         return results
 
-    def get_low_confidence_bucket(self, results: list[dict]) -> list[dict]:
+    def get_low_confidence_bucket(self, results: List[dict]) -> List[dict]:
         """Returns all words classified with 'low' confidence for manual review."""
         return [r for r in results if r["confidence"] == "low"]
 
@@ -240,7 +240,7 @@ _LABEL_MAP = {
 }
 
 
-def save_results_csv(results: list[dict], output_path: str) -> None:
+def save_results_csv(results: List[dict], output_path: str) -> None:
     """
     Saves classification results to a CSV file.
 

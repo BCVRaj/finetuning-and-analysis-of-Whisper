@@ -13,7 +13,6 @@ Pipeline:
   9. Sample 25 errors systematically, build taxonomy, propose + implement 1 fix
 """
 
-import os
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Union
@@ -21,7 +20,7 @@ from typing import Any, Dict, List, Union
 import torch
 import evaluate
 from datasets import Dataset, DatasetDict, load_dataset
-from peft import LoraConfig, TaskType, get_peft_model
+from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
@@ -173,6 +172,10 @@ def load_model_with_lora(model_id: str) -> WhisperForConditionalGeneration:
     model.config.forced_decoder_ids = None
     model.config.suppress_tokens = []
 
+    # REQUIRED for 8-bit training: prepares gradient checkpoints and casts
+    # layer norms to float32. Without this, the backward pass will crash.
+    model = prepare_model_for_kbit_training(model)
+
     lora_config = LoraConfig(
         r=32,                                    # Rank
         lora_alpha=64,                           # Scaling (2 × r)
@@ -205,7 +208,7 @@ def train(dataset: DatasetDict, processor: WhisperProcessor, output_dir: str) ->
         per_device_eval_batch_size=8,
         gradient_accumulation_steps=2,          # Effective batch size = 16
         warmup_steps=500,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",                  # Fixed: evaluation_strategy deprecated in transformers >=4.41
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="wer",
@@ -224,7 +227,7 @@ def train(dataset: DatasetDict, processor: WhisperProcessor, output_dir: str) ->
         eval_dataset=dataset["test"],
         data_collator=data_collator,
         compute_metrics=lambda pred: compute_metrics(pred, processor),
-        tokenizer=processor.feature_extractor,
+        processing_class=processor.feature_extractor,  # Fixed: 'tokenizer' arg renamed in transformers >=4.41
     )
 
     trainer.train()
