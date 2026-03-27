@@ -41,7 +41,8 @@ from utils import (
 # ---------------------------------------------------------------------------
 
 MODEL_ID = "openai/whisper-small"
-METADATA_PATH = "data/metadata.json"
+METADATA_PATH = "data/FT Data.xlsx"       # Real Josh Talks dataset (104 records)
+FT_RESULT_PATH = "data/FT Result.xlsx"    # Pre-computed WER results from Josh Talks
 OUTPUT_DIR = "./outputs/whisper-hi-lora"
 TARGET_SR = 16_000
 MIN_DURATION = 1.0   # seconds
@@ -60,8 +61,9 @@ logger = logging.getLogger(__name__)
 
 def prepare_record(item: dict, processor: WhisperProcessor) -> dict:
     """Load audio + transcript for one metadata record and extract features."""
+    # Use transcription_url_gcp — the real column name in FT Data.xlsx
     audio_array = load_audio_torchaudio(item["rec_url_gcp"]).numpy()
-    transcript = normalize_transcript(load_transcription(item["transcription_url"]))
+    transcript = normalize_transcript(load_transcription(item["transcription_url_gcp"]))
 
     input_features = processor.feature_extractor(
         audio_array, sampling_rate=TARGET_SR
@@ -236,6 +238,50 @@ def train(dataset: DatasetDict, processor: WhisperProcessor, output_dir: str) ->
 
 
 # ---------------------------------------------------------------------------
+# Step c — Load Pre-Computed WER from FT Result.xlsx
+# ---------------------------------------------------------------------------
+
+
+def load_wer_results(path: str = FT_RESULT_PATH) -> List[Dict]:
+    """
+    Reads pre-computed WER scores from FT Result.xlsx.
+
+    The Excel has 2 columns:
+      Col 0: Model name
+      Col 1: WER score (raw ratio, e.g. 0.30 = 30%)
+
+    Returns:
+        List of dicts with keys: model, wer
+    """
+    import pandas as pd  # noqa: PLC0415
+    df = pd.read_excel(path, header=None)
+    results = []
+    for _, row in df.iterrows():
+        model_name = str(row.iloc[0]).strip()
+        wer_val = row.iloc[1]
+        # Skip header rows or rows where WER is not numeric
+        try:
+            wer_float = float(wer_val)
+        except (ValueError, TypeError):
+            continue
+        if model_name.lower() in ("model", "nan", ""):
+            continue
+        results.append({"model": model_name, "wer": wer_float})
+    logger.info(f"Loaded {len(results)} pre-computed WER results from {path}")
+    return results
+
+
+def print_wer_table(results: List[Dict]) -> None:
+    """Pretty-prints a WER comparison table."""
+    print("\n" + "=" * 55)
+    print(f"{'Model':<40} {'WER':>8}")
+    print("-" * 55)
+    for r in results:
+        print(f"{r['model']:<40} {r['wer']:>8.4f}")
+    print("=" * 55)
+
+
+# ---------------------------------------------------------------------------
 # Step c — Baseline vs. Fine-Tuned Evaluation on FLEURS Hindi
 # ---------------------------------------------------------------------------
 
@@ -365,11 +411,18 @@ TOP_3_FIXES = [
 def main() -> None:
     logger.info("=== Q1: Whisper Fine-Tuning Pipeline ===")
 
+    # 0. Show pre-computed WER from FT Result.xlsx
+    logger.info("Loading pre-computed WER results from FT Result.xlsx...")
+    precomputed_results = load_wer_results()
+    if precomputed_results:
+        print("\n=== Pre-Computed WER Results (from FT Result.xlsx) ===")
+        print_wer_table(precomputed_results)
+
     # 1. Processor
     processor = WhisperProcessor.from_pretrained(MODEL_ID, language="hi", task="transcribe")
 
-    # 2. Dataset
-    logger.info("Building dataset...")
+    # 2. Dataset — reads real FT Data.xlsx, fixes broken GCP URLs automatically
+    logger.info(f"Building dataset from {METADATA_PATH}...")
     dataset = build_dataset(METADATA_PATH, processor)
 
     # 3. Train
@@ -384,7 +437,7 @@ def main() -> None:
     )
     finetuned_model = PeftModel.from_pretrained(base_model, OUTPUT_DIR)
 
-    # 5. Baseline evaluation
+    # 5. Live evaluation on FLEURS Hindi
     logger.info("Evaluating pretrained baseline on FLEURS Hindi...")
     baseline_model = WhisperForConditionalGeneration.from_pretrained(
         MODEL_ID, device_map="auto"
@@ -392,10 +445,13 @@ def main() -> None:
     baseline_wer = evaluate_on_fleurs(baseline_model, processor)
     finetuned_wer = evaluate_on_fleurs(finetuned_model, processor)
 
-    print("\n=== WER Results ===")
-    print(f"{'Model':<40} {'WER':>8}")
-    print(f"{'Whisper-small pretrained baseline':<40} {baseline_wer:>8.4f}")
-    print(f"{'Whisper-small LoRA fine-tuned':<40} {finetuned_wer:>8.4f}")
+    # Combine pre-computed + live results
+    combined = precomputed_results.copy()
+    combined.append({"model": "Whisper-small pretrained baseline (live)", "wer": baseline_wer})
+    combined.append({"model": "Whisper-small LoRA fine-tuned (live)", "wer": finetuned_wer})
+
+    print("\n=== Final Combined WER Results ===")
+    print_wer_table(combined)
 
     logger.info("Q1 pipeline complete.")
 

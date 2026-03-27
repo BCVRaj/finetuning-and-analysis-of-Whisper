@@ -55,9 +55,30 @@ HINDI_TENS: Dict[str, int] = {
 }
 
 HINDI_COMPOUND: Dict[str, int] = {
-    "पच्चीस": 25, "पैंतीस": 35, "पैंतालीस": 45, "पचपन": 55,
-    "पैंसठ": 65, "पचहत्तर": 75, "पचासी": 85, "पचानवे": 95,
-    "इक्कीस": 21, "बाईस": 22, "तेईस": 23, "चौबीस": 24,
+    # 21-29
+    "इक्कीस": 21, "बाईस": 22, "तेईस": 23, "चौबीस": 24, "पच्चीस": 25,
+    "छब्बीस": 26, "सत्ताईस": 27, "अट्ठाईस": 28, "उनतीस": 29,
+    # 31-39
+    "इकतीस": 31, "बत्तीस": 32, "तैंतीस": 33, "चौंतीस": 34, "पैंतीस": 35,
+    "छत्तीस": 36, "सैंतीस": 37, "अड़तीस": 38, "उनतालीस": 39,
+    # 41-49
+    "इकतालीस": 41, "बयालीस": 42, "तैंतालीस": 43, "चौंतालीस": 44, "पैंतालीस": 45,
+    "छियालीस": 46, "सैंतालीस": 47, "अड़तालीस": 48, "उनचास": 49,
+    # 51-59
+    "इक्यावन": 51, "बावन": 52, "तिरपन": 53, "चौवन": 54, "पचपन": 55,
+    "छप्पन": 56, "सत्तावन": 57, "अट्ठावन": 58, "उनसठ": 59,
+    # 61-69
+    "इकसठ": 61, "बासठ": 62, "तिरसठ": 63, "चौंसठ": 64, "पैंसठ": 65,
+    "छियासठ": 66, "सड़सठ": 67, "अड़सठ": 68, "उनहत्तर": 69,
+    # 71-79
+    "इकहत्तर": 71, "बहत्तर": 72, "तिहत्तर": 73, "चौहत्तर": 74, "पचहत्तर": 75,
+    "छिहत्तर": 76, "सतहत्तर": 77, "अठहत्तर": 78, "उन्यासी": 79,
+    # 81-89
+    "इक्यासी": 81, "बयासी": 82, "तिरासी": 83, "चौरासी": 84, "पचासी": 85,
+    "छियासी": 86, "सत्तासी": 87, "अट्ठासी": 88, "नवासी": 89,
+    # 91-99
+    "इक्यानवे": 91, "बानवे": 92, "तिरानवे": 93, "चौरानवे": 94, "पचानवे": 95,
+    "छियानवे": 96, "सत्तानवे": 97, "अट्ठानवे": 98, "निन्यानवे": 99,
 }
 
 HINDI_MULTIPLIERS: Dict[str, int] = {
@@ -120,23 +141,49 @@ def normalize_numbers(text: str) -> str:
             frozen[placeholder] = match.group(0)
             text = text.replace(match.group(0), placeholder)
 
-    # Step 2: Compound multiplier patterns (e.g. दस हज़ार → 10000)
-    def replace_compound(m: re.Match) -> str:
-        unit_val = ALL_NUMBER_WORDS.get(m.group(1), 1)
-        mult_val = HINDI_MULTIPLIERS.get(m.group(2), 1)
-        return str(unit_val * mult_val)
+    # Step 2: Full compound chain resolution
+    # Handles "तीन सौ चौवन" → 354, "पाँच लाख तीस हज़ार" → 530000
+    # Tokenise, walk greedily: accumulate (current * multiplier) + trailing unit
+    tokens = text.split()
+    out_tokens: List[str] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok in ALL_NUMBER_WORDS or tok in HINDI_MULTIPLIERS:
+            # Greedy accumulation
+            total = 0
+            current = ALL_NUMBER_WORDS.get(tok, 0)
+            if tok in HINDI_MULTIPLIERS:
+                total += HINDI_MULTIPLIERS[tok]
+                current = 0
+            j = i + 1
+            while j < len(tokens):
+                nxt = tokens[j]
+                if nxt in HINDI_MULTIPLIERS:
+                    mult = HINDI_MULTIPLIERS[nxt]
+                    total += (current if current > 0 else 1) * mult
+                    current = 0
+                    j += 1
+                elif nxt in ALL_NUMBER_WORDS:
+                    # trailing unit after a multiplier
+                    if total > 0:
+                        total += ALL_NUMBER_WORDS[nxt]
+                        j += 1
+                        break
+                    else:
+                        # two consecutive units (not a compound) — stop
+                        break
+                else:
+                    break
+            result = total + current if total > 0 else current
+            out_tokens.append(str(result) if result > 0 else tok)
+            i = j
+        else:
+            out_tokens.append(tok)
+            i += 1
+    text = " ".join(out_tokens)
 
-    text = _COMPOUND_PATTERN.sub(replace_compound, text)
-
-    # Step 3: Standalone scale words (सौ → 100, हज़ार → 1000, etc.)
-    for word, val in HINDI_MULTIPLIERS.items():
-        text = re.sub(rf"\b{re.escape(word)}\b", str(val), text)
-
-    # Step 4: Simple number words (longest first to prevent partial matches)
-    for word, val in _SORTED_NUMBER_WORDS:
-        text = re.sub(rf"\b{re.escape(word)}\b", str(val), text)
-
-    # Step 5: Restore frozen idioms
+    # Step 3: Restore frozen idioms
     for placeholder, original in frozen.items():
         text = text.replace(placeholder, original)
 

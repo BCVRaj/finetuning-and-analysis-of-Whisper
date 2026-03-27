@@ -28,14 +28,25 @@ Usage:
 import logging
 from collections import Counter
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Dict, List, Set
 
+import pandas as pd
 from jiwer import wer as standard_wer
 # Note: editdistance is NOT used here — SequenceMatcher handles word alignment.
 # Use editdistance only if you need character-level edit distance externally.
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
+
+# ---------------------------------------------------------------------------
+# Real Data Path
+# ---------------------------------------------------------------------------
+
+Q4_DATA_PATH = Path("data") / "Question 4.xlsx"
+
+# Model columns in the real Excel (in order)
+MODEL_COLUMNS = ["Model H", "Model i", "Model k", "Model l", "Model m", "Model n"]
 
 # ---------------------------------------------------------------------------
 # Numeric Variant Mapping (digit ↔ Hindi word form)
@@ -280,10 +291,130 @@ def print_results_table(results: List[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Demo
+# Real Data Loader
 # ---------------------------------------------------------------------------
 
+
+def load_q4_data(path: str = str(Q4_DATA_PATH)) -> Dict:
+    """
+    Loads Question 4.xlsx into structured form.
+
+    Columns expected: segment_url_link, Human, Model H, Model i,
+                      Model k, Model l, Model m, Model n
+
+    Returns:
+        Dict with keys:
+          - segments: list of dicts with 'url', 'reference', 'models'
+          - model_names: list of model name strings
+    """
+    df = pd.read_excel(path)
+    # Drop fully empty rows/columns
+    df = df.dropna(how="all").dropna(axis=1, how="all")
+
+    model_cols = [c for c in MODEL_COLUMNS if c in df.columns]
+    logger.info(f"Loaded {len(df)} segments from {path}. Models: {model_cols}")
+
+    segments = []
+    for _, row in df.iterrows():
+        ref = str(row.get("Human", "")).strip()
+        if not ref or ref.lower() == "nan":
+            continue
+        model_outputs = {
+            m: str(row.get(m, "")).strip() for m in model_cols
+        }
+        segments.append({
+            "url": str(row.get("segment_url_link", "")).strip(),
+            "reference": ref,
+            "models": model_outputs,
+        })
+    return {"segments": segments, "model_names": model_cols}
+
+
+def evaluate_from_excel(
+    path: str = str(Q4_DATA_PATH),
+    consensus_threshold: int = 4,
+) -> None:
+    """
+    Full Lattice-WER evaluation on the real Question 4.xlsx data.
+
+    For each of the 46 segments:
+      - Tokenises the Human reference and all model outputs
+      - Builds a lattice
+      - Computes standard WER and Lattice-WER per model per segment
+
+    Prints:
+      - Per-model aggregate results table (averaged across all segments)
+    """
+    data = load_q4_data(path)
+    segments = data["segments"]
+    model_names = data["model_names"]
+
+    # Accumulators: {model_name: [list of (std_wer, lat_wer)]}
+    totals: Dict[str, List] = {m: [] for m in model_names}
+
+    for seg_idx, seg in enumerate(segments):
+        ref_tokens = seg["reference"].split()
+        model_outputs = [seg["models"][m].split() for m in model_names]
+
+        try:
+            lattice = build_lattice(model_outputs, ref_tokens, consensus_threshold)
+        except Exception as exc:
+            logger.warning(f"Segment {seg_idx}: lattice build failed — {exc}")
+            continue
+
+        ref_str = seg["reference"]
+        for m_name, hyp_tokens in zip(model_names, model_outputs):
+            hyp_str = " ".join(hyp_tokens)
+            try:
+                std = standard_wer(ref_str, hyp_str)
+            except Exception:
+                std = 1.0
+            lat = lattice_wer(lattice, hyp_tokens)
+            totals[m_name].append((std, lat))
+
+    # Aggregate and print results
+    print(f"\n{'='*90}")
+    print(f" Lattice-WER Evaluation — Question 4.xlsx ({len(segments)} segments)")
+    print(f"{'='*90}")
+    print(f"{'Model':<15} {'Avg Std WER':>12} {'Avg Lat WER':>12} {'Avg Delta':>10} {'Verdict'}")
+    print(f"{'-'*90}")
+
+    for m_name in model_names:
+        scores = totals[m_name]
+        if not scores:
+            continue
+        avg_std = sum(s for s, _ in scores) / len(scores)
+        avg_lat = sum(l for _, l in scores) / len(scores)
+        avg_delta = avg_std - avg_lat
+        verdict = "Unfairly penalised" if avg_delta > 0.01 else "Fairly scored"
+        print(
+            f"{m_name:<15} {avg_std:>12.4f} {avg_lat:>12.4f} "
+            f"{avg_delta:>10.4f}  {verdict}"
+        )
+    print(f"{'='*90}")
+    print(
+        "\nNote: 'Unfairly penalised' means standard WER over-penalised valid alternatives\n"
+        "(e.g. digit vs word form). Lattice-WER corrects this."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Demo (hardcoded) — kept for quick unit testing
+# ---------------------------------------------------------------------------
+
+
 if __name__ == "__main__":
+    # ——— Run on real Question 4.xlsx data ———
+    print("=" * 90)
+    print(" REAL DATA: Lattice-WER evaluation on Question 4.xlsx")
+    print("=" * 90)
+    evaluate_from_excel()
+
+    # ——— Hardcoded demo (sanity check) ———
+    print("\n" + "="*90)
+    print(" DEMO (hardcoded 5-model example for sanity check)")
+    print("="*90)
+
     # Example utterance: "उसने चौदह किताबें खरीदीं"
     reference = ["उसने", "चौदह", "किताबें", "खरीदीं"]
 

@@ -25,6 +25,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import pandas as pd
 from symspellpy import SymSpell, Verbosity
 
 from utils import load_hindi_wordlist
@@ -43,6 +44,39 @@ OUTPUTS_DIR = Path("outputs")
 HINDI_WORDNET_PATH = HINDI_DICT_DIR / "hindi_wordnet.txt"
 HINDI_FREQUENCY_PATH = HINDI_DICT_DIR / "hindi_frequency.txt"
 LOANWORDS_PATH = HINDI_DICT_DIR / "loanwords_devanagari.txt"
+UNIQUE_WORDS_XLSX = DATA_DIR / "Unique Words Data.xlsx"  # Real Q3 input (177,509 words)
+
+# ---------------------------------------------------------------------------
+# Word Loader — reads from Unique Words Data.xlsx or plain .txt
+# ---------------------------------------------------------------------------
+
+
+def load_unique_words(path: str = str(UNIQUE_WORDS_XLSX)) -> List[str]:
+    """
+    Loads unique Hindi words from the real data file.
+
+    Supports:
+      - .xlsx/.xls : reads the 'word' column (one word per row)
+      - .txt       : reads one word per line (legacy)
+
+    Args:
+        path: Path to Unique Words Data.xlsx or a plain-text word list.
+
+    Returns:
+        List of unique stripped word strings.
+    """
+    import pathlib
+    ext = pathlib.Path(path).suffix.lower()
+    if ext in (".xlsx", ".xls"):
+        df = pd.read_excel(path)
+        col = "word" if "word" in df.columns else df.columns[0]
+        words = [str(w).strip() for w in df[col].dropna() if str(w).strip()]
+    else:
+        with open(path, encoding="utf-8") as f:
+            words = [line.strip() for line in f if line.strip()]
+    logger.info(f"Loaded {len(words)} unique words from {path}")
+    return words
+
 
 # ---------------------------------------------------------------------------
 # Frequency Dictionary Builder
@@ -268,8 +302,8 @@ def save_results_csv(results: List[dict], output_path: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hindi spell checker for Josh Talks")
-    parser.add_argument("--input", default="data/unique_words.txt",
-                        help="Path to file with unique Hindi words (one per line)")
+    parser.add_argument("--input", default=str(UNIQUE_WORDS_XLSX),
+                        help="Path to Unique Words Data.xlsx (or plain .txt word list)")
     parser.add_argument("--output", default="outputs/spelling_results.csv",
                         help="Path for output CSV")
     parser.add_argument("--build-freq-dict", action="store_true",
@@ -291,12 +325,10 @@ def main() -> None:
 
     checker = HindiSpellChecker(sym_spell, freq_dict, hindi_wordnet, loan_whitelist)
 
-    # Load unique words to classify
-    try:
-        with open(args.input, encoding="utf-8") as f:
-            words = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        logger.error(f"Input file not found: {args.input}")
+    # Load unique words — reads Unique Words Data.xlsx by default
+    words = load_unique_words(args.input)
+    if not words:
+        logger.error(f"No words loaded from: {args.input}")
         return
 
     logger.info(f"Classifying {len(words)} unique words...")

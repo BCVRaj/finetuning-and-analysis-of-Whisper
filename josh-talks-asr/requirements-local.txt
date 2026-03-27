@@ -1,0 +1,32 @@
+# Josh Talks ASR — Local Windows requirements (Q2, Q3, Q4)
+# Run this on your Windows machine for local testing.
+#
+# NOTE: bitsandbytes and GPU training (Q1) require Google Colab/Kaggle.
+# See requirements-colab.txt for the full GPU environment setup.
+
+# Core PyTorch (CPU-only for local dev — fine for Q2/Q3/Q4)
+torch>=2.2.0
+torchaudio>=2.2.0
+
+# Transformers ecosystem (model loading, tokenization, evaluation)
+transformers>=4.41.0
+datasets>=2.18.0
+evaluate>=0.4.0
+
+# Language detection (FastText — Q2)
+fasttext-wheel>=0.9.2
+
+# Spell checking (Q3)
+symspellpy>=6.7.7
+
+# WER evaluation (Q4)
+editdistance>=0.8.1
+jiwer>=3.0.3
+
+# Hindi NLP normalization
+indic-nlp-library>=0.91
+
+# Data / Utilities
+numpy>=1.26.0
+pandas>=2.2.0
+requests>=2.31.0

@@ -15,7 +15,10 @@ import json
 import re
 import unicodedata
 import logging
+from pathlib import Path
 from typing import Optional
+
+import pandas as pd
 
 import requests
 import torch
@@ -60,29 +63,41 @@ def fix_url(old_url: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+# URL columns that exist in the real FT Data.xlsx
+_URL_COLUMNS = ("rec_url_gcp", "transcription_url_gcp", "metadata_url_gcp")
+
+
 def load_metadata(path: str) -> list:
     """
-    Loads dataset metadata JSON and fixes all GCP URLs in-place.
+    Loads dataset metadata from FT Data.xlsx (or legacy JSON) and fixes all
+    broken GCP URLs in-place.
 
-    Each record must have keys: rec_url_gcp, transcription_url, metadata_url
+    Real Excel column names: rec_url_gcp, transcription_url_gcp, metadata_url_gcp
 
     Args:
-        path: Local path to the metadata JSON file.
+        path: Path to FT Data.xlsx (or a legacy .json file).
 
     Returns:
-        List of record dicts with all URLs rewritten to upload_goai format.
+        List of record dicts with all URLs rewritten to the upload_goai format.
     """
-    with open(path, encoding="utf-8") as f:
-        records = json.load(f)
+    p = Path(path)
+    if p.suffix.lower() in (".xlsx", ".xls"):
+        df = pd.read_excel(path)
+        records = df.to_dict(orient="records")
+    else:
+        # Legacy JSON path — kept for backward compatibility
+        with open(path, encoding="utf-8") as f:
+            records = json.load(f)
 
     fixed_count = 0
     for record in records:
-        for key in ("rec_url_gcp", "transcription_url", "metadata_url"):
-            if key in record and _OLD_BUCKET in record[key]:
-                record[key] = fix_url(record[key])
+        for key in _URL_COLUMNS:
+            val = record.get(key)
+            if isinstance(val, str) and _OLD_BUCKET in val:
+                record[key] = fix_url(val)
                 fixed_count += 1
 
-    logger.info(f"Loaded {len(records)} records; fixed {fixed_count} URLs.")
+    logger.info(f"Loaded {len(records)} records from {path}; fixed {fixed_count} URLs.")
     return records
 
 
