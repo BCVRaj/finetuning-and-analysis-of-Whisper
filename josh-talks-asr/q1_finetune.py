@@ -22,6 +22,7 @@ import evaluate
 from datasets import Dataset, DatasetDict, load_dataset
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
+    BitsAndBytesConfig,
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
     WhisperForConditionalGeneration,
@@ -168,7 +169,7 @@ def load_model_with_lora(model_id: str) -> WhisperForConditionalGeneration:
     """
     model = WhisperForConditionalGeneration.from_pretrained(
         model_id,
-        load_in_8bit=True,
+        quantization_config=BitsAndBytesConfig(load_in_8bit=True),
         device_map="auto",
     )
     model.config.forced_decoder_ids = None
