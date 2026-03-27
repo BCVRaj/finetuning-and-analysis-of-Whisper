@@ -404,36 +404,7 @@ def evaluate_from_excel(
 
 
 if __name__ == "__main__":
-    # ——— Run on real Question 4.xlsx data ———
-    print("=" * 90)
-    print(" REAL DATA: Lattice-WER evaluation on Question 4.xlsx")
-    print("=" * 90)
+    # Evaluates all 46 real segments from Question 4.xlsx
+    # Models: H, i, k, l, m, n (as named in the Excel)
+    # Reference: Human column
     evaluate_from_excel()
-
-    # ——— Hardcoded demo (sanity check) ———
-    print("\n" + "="*90)
-    print(" DEMO (hardcoded 5-model example for sanity check)")
-    print("="*90)
-
-    # Example utterance: "उसने चौदह किताबें खरीदीं"
-    reference = ["उसने", "चौदह", "किताबें", "खरीदीं"]
-
-    # Simulate 5 model outputs
-    model_outputs = [
-        ["उसने", "14", "किताबें", "खरीदीं"],       # Model A: digit form
-        ["उसने", "चौदह", "किताबे", "खरीदी"],        # Model B: spelling + gender variant
-        ["उसने", "14", "पुस्तकें", "खरीदीं"],       # Model C: digit + synonym
-        ["उसने", "चौदह", "किताबें", "खरीदीं"],      # Model D: exact match
-        ["उसने", "चौदह", "किताबें", "लिया"],         # Model E: wrong verb
-    ]
-    model_names = ["Model A", "Model B", "Model C", "Model D", "Model E"]
-
-    print("=== Lattice-WER Evaluation Demo ===")
-    print(f"\nReference: {' '.join(reference)}")
-    print("\nBuilding lattice...")
-    lattice = build_lattice(model_outputs, reference, consensus_threshold=3)
-    for i, bin_set in enumerate(lattice):
-        print(f"  Bin {i}: {bin_set}")
-
-    results = evaluate_all_models(model_outputs, model_names, reference, consensus_threshold=3)
-    print_results_table(results)

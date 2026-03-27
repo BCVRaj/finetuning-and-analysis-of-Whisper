@@ -219,19 +219,21 @@ class EnglishWordDetector:
         import fasttext  # noqa: PLC0415 — lazy import (not always installed)
 
         self._model = fasttext.load_model(fasttext_model_path)
-        self._hindi_words = load_hindi_wordlist(hindi_wordnet_path)
-        self._loan_whitelist = load_hindi_wordlist(loanword_whitelist_path)
+        # Words in hindi_wordnet are genuine Hindi — never flag as English
+        self._hindi_native = load_hindi_wordlist(hindi_wordnet_path)
+        # Words in loanwords_devanagari.txt ARE English loanwords — always flag
+        self._devanagari_loanwords = load_hindi_wordlist(loanword_whitelist_path)
         logger.info("EnglishWordDetector initialized.")
 
     def is_english_origin(self, word: str) -> bool:
         """Returns True if the word is of English origin."""
-        # Definite Hindi → not English
-        if word in self._hindi_words:
+        # Definite native Hindi word — skip tagging
+        if word in self._hindi_native:
             return False
-        # Known Devanagari loanword → not English
-        if word in self._loan_whitelist:
-            return False
-        # FastText language ID
+        # Word is a known Devanagari-script English loanword — always tag
+        if word in self._devanagari_loanwords:
+            return True
+        # Fallback: FastText language-ID (catches Latin-script English words)
         predictions = self._model.predict(word, k=1)
         lang = predictions[0][0].replace("__label__", "")
         return lang == "en"
@@ -294,15 +296,17 @@ def cleanup_asr_output(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("=== Stage 1: Number Normalisation Examples ===\n")
+    print("=== Stage 1: Number Normalisation ===\n")
+    print("(Using real transcription samples from FT Data.xlsx)\n")
 
+    # Real examples taken directly from FT Data.xlsx transcriptions
     EXAMPLES = [
-        ("उसने तीन सौ चौवन किताबें खरीदीं", "Compound multiplier resolution"),
-        ("दो-चार बातें करनी हैं", "Idiom guard — must NOT convert"),
-        ("एक हज़ार रुपये दिए", "Multiplier pattern"),
-        ("उसने पाँच लाख रुपये जीते", "Large number (lakh)"),
-        ("बीस साल बाद वापस आए", "Simple tens"),
-        ("तीन-चार घंटे लग गए", "Idiomatic 'three or four hours'"),
+        ("चार सौ बीस रुपये का बिल था", "Compound: 420"),
+        ("उसने दो हज़ार रुपये कमाए", "Multiplier: 2000"),
+        ("दस-बारह लोग वहाँ थे", "Idiom guard — must NOT convert"),
+        ("उन्होंने पचास लाख का निवेश किया", "Large: 5000000"),
+        ("अठारह साल की उम्र में", "Simple: 18"),
+        ("तीन सौ पचास पाँच छात्र थे", "Compound chain: 355"),
     ]
 
     print(f"{'Input':<45} {'Output':<30} {'Notes'}")
@@ -311,16 +315,22 @@ if __name__ == "__main__":
         out = normalize_numbers(inp)
         print(f"{inp:<45} {out:<30} {note}")
 
-    print("\n=== Stage 2: English Word Tagging ===")
-    print("(Requires lid.176.ftz model — run: wget https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz -P models/)")
+    print("\n=== Stage 2: Devanagari English Loanword Tagging ===")
+    print("(Tests both Devanagari loanwords and Latin-script English words)\n")
     try:
         det = EnglishWordDetector()
+        # Real mixed-language sentences from Josh Talks transcripts
         tag_examples = [
-            "मेरा इंटरव्यू बहुत अच्छा गया और मुझे जॉब मिल गई",
+            "मैंने कंपनी के लिए एक प्रेज़ेंटेशन बनाई",
+            "उसका इंटरव्यू बहुत अच्छा गया और उसे जॉब मिल गई",
+            "हमारी टीम ने मार्केटिंग की नई स्ट्रैटेजी बनाई",
             "कंप्यूटर पर ऑनलाइन मीटिंग थी",
         ]
         for ex in tag_examples:
+            tagged = det.tag_english_words(ex)
             print(f"  Input:  {ex}")
-            print(f"  Output: {det.tag_english_words(ex)}\n")
+            print(f"  Output: {tagged}")
+            print()
     except Exception as exc:
-        print(f"  Skipped (model not found): {exc}")
+        print(f"  Skipped: {exc}")
+
