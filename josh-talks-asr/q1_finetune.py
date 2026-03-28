@@ -219,16 +219,16 @@ def train(dataset: DatasetDict, processor: WhisperProcessor, output_dir: str) ->
 
     training_args = Seq2SeqTrainingArguments(
         output_dir=output_dir,
-        num_train_epochs=5,
+        num_train_epochs=1,
         learning_rate=1e-5,
         per_device_train_batch_size=8,
         per_device_eval_batch_size=8,
         gradient_accumulation_steps=2,          # Effective batch size = 16
-        warmup_steps=500,
+        warmup_steps=50,
         eval_strategy="steps",
-        eval_steps=267,      # 20% intervals
+        eval_steps=100,      # Evaluate roughly 3 times during the single epoch
         save_strategy="steps",
-        save_steps=267,
+        save_steps=100,
         save_total_limit=1,  # Prevent Colab 78GB disk crash
         load_best_model_at_end=True,
         metric_for_best_model="wer",
