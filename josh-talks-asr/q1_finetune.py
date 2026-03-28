@@ -33,7 +33,7 @@ from utils import (
     fix_url,
     load_audio_torchaudio,
     load_metadata,
-    load_transcription,
+    load_transcription_segments,
     normalize_transcript,
 )
 
@@ -60,47 +60,62 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def prepare_record(item: dict, processor: WhisperProcessor) -> dict:
-    """Load audio + transcript for one metadata record and extract features."""
-    # Use transcription_url_gcp — the real column name in FT Data.xlsx
-    audio_array = load_audio_torchaudio(item["rec_url_gcp"]).numpy()
-    transcript = normalize_transcript(load_transcription(item["transcription_url_gcp"]))
-
-    input_features = processor.feature_extractor(
-        audio_array, sampling_rate=TARGET_SR
-    ).input_features[0]
-
-    labels = processor.tokenizer(transcript).input_ids
-
-    return {
-        "input_features": input_features,
-        "labels": labels,
-        "duration": item["duration"],
-    }
-
-
 def build_dataset(metadata_path: str, processor: WhisperProcessor) -> DatasetDict:
     """
     Builds a train/test HuggingFace DatasetDict from the metadata JSON.
 
-    Filters clips outside [1, 30] seconds and applies a 90/10 split.
+    Downloads the full audio for each record, then slices it into segments
+    based on the JSON transcription boundaries. 
+    Filters chunks outside [1, 30] seconds and applies a 90/10 split.
     """
     metadata = load_metadata(metadata_path)
-
-    # Filter by duration
-    filtered = [m for m in metadata if MIN_DURATION <= m["duration"] <= MAX_DURATION]
-    logger.info(
-        f"Duration filter: {len(metadata)} → {len(filtered)} records "
-        f"({len(metadata) - len(filtered)} removed)"
-    )
-
     records = []
-    for i, m in enumerate(filtered):
-        try:
-            records.append(prepare_record(m, processor))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Skipping record {i}: {exc}")
 
+    for i, item in enumerate(metadata):
+        try:
+            # 1. Fetch JSON segments
+            segments = load_transcription_segments(item["transcription_url_gcp"])
+            if not segments:
+                continue
+
+            # 2. Download the full audio to memory once
+            audio_array = load_audio_torchaudio(item["rec_url_gcp"]).numpy()
+
+            # 3. Slice the audio into <30s chunks based on JSON timestamps
+            for seg in segments:
+                duration = seg["end"] - seg["start"]
+                if not (MIN_DURATION <= duration <= MAX_DURATION):
+                    continue
+
+                transcript = normalize_transcript(seg["text"])
+                if not transcript:
+                    continue
+
+                # Slice audio correctly
+                start_sample = int(seg["start"] * TARGET_SR)
+                end_sample = int(seg["end"] * TARGET_SR)
+                
+                # Protect against OOB slice if timestamp exceeds audio bounds
+                audio_slice = audio_array[start_sample:end_sample]
+                if len(audio_slice) == 0:
+                    continue
+
+                input_features = processor.feature_extractor(
+                    audio_slice, sampling_rate=TARGET_SR
+                ).input_features[0]
+
+                labels = processor.tokenizer(transcript).input_ids
+
+                records.append({
+                    "input_features": input_features,
+                    "labels": labels,
+                    "duration": duration,
+                })
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Skipping record {i} (URL: {item.get('rec_url_gcp')}): {exc}")
+
+    logger.info(f"Total valid fine-tuning segments exacted: {len(records)}")
+    
     dataset = Dataset.from_list(records)
     split = dataset.train_test_split(test_size=0.1, seed=42)
     logger.info(f"Dataset built: {len(split['train'])} train / {len(split['test'])} test")

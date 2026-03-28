@@ -40,7 +40,10 @@ logger = logging.getLogger(__name__)
 # URL Fixer — implement this FIRST; all data access depends on it
 # ---------------------------------------------------------------------------
 
-_OLD_BUCKET = "storage.googleapis.com/goai_audio"
+_OLD_BUCKETS = (
+    "storage.googleapis.com/goai_audio",
+    "storage.googleapis.com/joshtalks-data-collection/hq_data/hi",
+)
 _NEW_BUCKET = "storage.googleapis.com/upload_goai"
 
 
@@ -48,14 +51,17 @@ def fix_url(old_url: str) -> str:
     """
     Rewrites legacy GCP URLs to the upload_goai format.
 
-    Example:
-      Input:  https://storage.googleapis.com/goai_audio/967179/825780.wav
-      Output: https://storage.googleapis.com/upload_goai/967179/825780.wav
+    Handles both the published legacy format and the actual format found in
+    FT Data.xlsx.
 
-    Transcription URL pattern:
-      https://storage.googleapis.com/upload_goai/967179/825780_transcription.json
+    Example:
+      Input:  https://storage.googleapis.com/joshtalks-data-collection/hq_data/hi/967179/825780_audio.wav
+      Output: https://storage.googleapis.com/upload_goai/967179/825780_audio.wav
     """
-    return old_url.replace(_OLD_BUCKET, _NEW_BUCKET)
+    for old_bucket in _OLD_BUCKETS:
+        if old_bucket in old_url:
+            return old_url.replace(old_bucket, _NEW_BUCKET)
+    return old_url
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +99,7 @@ def load_metadata(path: str) -> list:
     for record in records:
         for key in _URL_COLUMNS:
             val = record.get(key)
-            if isinstance(val, str) and _OLD_BUCKET in val:
+            if isinstance(val, str) and any(old_b in val for old_b in _OLD_BUCKETS):
                 record[key] = fix_url(val)
                 fixed_count += 1
 
@@ -108,28 +114,27 @@ def load_metadata(path: str) -> list:
 _HTTP_TIMEOUT = 30  # seconds
 
 
-def load_transcription(transcription_url: str) -> str:
+def load_transcription_segments(transcription_url: str) -> list:
     """
-    Fetches the transcription text from a GCP JSON file.
-
-    The URL must already be in the upload_goai format (use fix_url() first).
-
-    Args:
-        transcription_url: URL pointing to a _transcription.json file on GCP.
+    Fetches the transcription segments from a GCP JSON file.
 
     Returns:
-        The transcription string, or "" if the key is missing or request fails.
+        List of dicts: [{"start": 0.0, "end": 2.5, "text": "..."}, ...]
     """
     try:
         response = requests.get(fix_url(transcription_url), timeout=_HTTP_TIMEOUT)
         response.raise_for_status()
-        return response.json().get("transcription", "")
+        data = response.json()
+        if isinstance(data, list):
+            return data
+        # Fallback if it's not a list for some reason
+        return []
     except requests.RequestException as exc:
         logger.warning(f"Failed to fetch transcription from {transcription_url}: {exc}")
-        return ""
+        return []
     except (json.JSONDecodeError, ValueError) as exc:
         logger.warning(f"Invalid JSON in transcription response: {exc}")
-        return ""
+        return []
 
 
 # ---------------------------------------------------------------------------
