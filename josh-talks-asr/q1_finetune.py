@@ -67,56 +67,55 @@ def build_dataset(metadata_path: str, processor: WhisperProcessor) -> DatasetDic
     Downloads the full audio for each record, then slices it into segments
     based on the JSON transcription boundaries. 
     Filters chunks outside [1, 30] seconds and applies a 90/10 split.
+    Uses a generator to stream data to disk, preventing OOM crashes.
     """
     metadata = load_metadata(metadata_path)
-    records = []
 
-    for i, item in enumerate(metadata):
-        try:
-            # 1. Fetch JSON segments
-            segments = load_transcription_segments(item["transcription_url_gcp"])
-            if not segments:
-                continue
-
-            # 2. Download the full audio to memory once
-            audio_array = load_audio_torchaudio(item["rec_url_gcp"]).numpy()
-
-            # 3. Slice the audio into <30s chunks based on JSON timestamps
-            for seg in segments:
-                duration = seg["end"] - seg["start"]
-                if not (MIN_DURATION <= duration <= MAX_DURATION):
+    def gen():
+        for i, item in enumerate(metadata):
+            try:
+                # 1. Fetch JSON segments
+                segments = load_transcription_segments(item["transcription_url_gcp"])
+                if not segments:
                     continue
 
-                transcript = normalize_transcript(seg["text"])
-                if not transcript:
-                    continue
+                # 2. Download the full audio to memory once
+                audio_array = load_audio_torchaudio(item["rec_url_gcp"]).numpy()
 
-                # Slice audio correctly
-                start_sample = int(seg["start"] * TARGET_SR)
-                end_sample = int(seg["end"] * TARGET_SR)
-                
-                # Protect against OOB slice if timestamp exceeds audio bounds
-                audio_slice = audio_array[start_sample:end_sample]
-                if len(audio_slice) == 0:
-                    continue
+                # 3. Slice the audio into <30s chunks based on JSON timestamps
+                for seg in segments:
+                    duration = seg["end"] - seg["start"]
+                    if not (MIN_DURATION <= duration <= MAX_DURATION):
+                        continue
 
-                input_features = processor.feature_extractor(
-                    audio_slice, sampling_rate=TARGET_SR
-                ).input_features[0]
+                    transcript = normalize_transcript(seg["text"])
+                    if not transcript:
+                        continue
 
-                labels = processor.tokenizer(transcript).input_ids
+                    # Slice audio correctly
+                    start_sample = int(seg["start"] * TARGET_SR)
+                    end_sample = int(seg["end"] * TARGET_SR)
+                    
+                    # Protect against OOB slice if timestamp exceeds audio bounds
+                    audio_slice = audio_array[start_sample:end_sample]
+                    if len(audio_slice) == 0:
+                        continue
 
-                records.append({
-                    "input_features": input_features,
-                    "labels": labels,
-                    "duration": duration,
-                })
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Skipping record {i} (URL: {item.get('rec_url_gcp')}): {exc}")
+                    input_features = processor.feature_extractor(
+                        audio_slice, sampling_rate=TARGET_SR
+                    ).input_features[0]
 
-    logger.info(f"Total valid fine-tuning segments exacted: {len(records)}")
+                    labels = processor.tokenizer(transcript).input_ids
+
+                    yield {
+                        "input_features": input_features,
+                        "labels": labels,
+                        "duration": duration,
+                    }
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Skipping record {i} (URL: {item.get('rec_url_gcp')}): {exc}")
     
-    dataset = Dataset.from_list(records)
+    dataset = Dataset.from_generator(gen)
     split = dataset.train_test_split(test_size=0.1, seed=42)
     logger.info(f"Dataset built: {len(split['train'])} train / {len(split['test'])} test")
     return split
