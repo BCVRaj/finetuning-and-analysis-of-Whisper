@@ -451,7 +451,7 @@ def main() -> None:
     from peft import PeftModel  # noqa: PLC0415
 
     base_model = WhisperForConditionalGeneration.from_pretrained(
-        MODEL_ID, load_in_8bit=True, device_map="auto"
+        MODEL_ID, quantization_config=BitsAndBytesConfig(load_in_8bit=True), device_map="auto"
     )
     finetuned_model = PeftModel.from_pretrained(base_model, OUTPUT_DIR)
 
