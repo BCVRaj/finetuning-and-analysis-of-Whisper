@@ -186,8 +186,8 @@ def load_model_with_lora(model_id: str) -> WhisperForConditionalGeneration:
         quantization_config=BitsAndBytesConfig(load_in_8bit=True),
         device_map="auto",
     )
-    model.config.forced_decoder_ids = None
-    model.config.suppress_tokens = []
+    model.generation_config.forced_decoder_ids = None
+    model.generation_config.suppress_tokens = []
 
     # REQUIRED for 8-bit training: prepares gradient checkpoints and casts
     # layer norms to float32. Without this, the backward pass will crash.
