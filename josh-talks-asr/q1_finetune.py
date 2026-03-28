@@ -225,8 +225,11 @@ def train(dataset: DatasetDict, processor: WhisperProcessor, output_dir: str) ->
         per_device_eval_batch_size=8,
         gradient_accumulation_steps=2,          # Effective batch size = 16
         warmup_steps=500,
-        eval_strategy="epoch",                  # Fixed: evaluation_strategy deprecated in transformers >=4.41
-        save_strategy="epoch",
+        eval_strategy="steps",
+        eval_steps=267,      # 20% intervals
+        save_strategy="steps",
+        save_steps=267,
+        save_total_limit=1,  # Prevent Colab 78GB disk crash
         load_best_model_at_end=True,
         metric_for_best_model="wer",
         greater_is_better=False,
