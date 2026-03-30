@@ -16,6 +16,8 @@ outputs/
 
 # Dataset files — not committed (GCP access)
 data/
+*.xlsx
+*.csv
 
 # Jupyter notebooks checkpoints
 .ipynb_checkpoints/
