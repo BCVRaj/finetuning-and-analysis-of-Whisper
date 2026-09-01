@@ -256,39 +256,3 @@ CONFIDENCE_THRESHOLDS = {
 
 
 
-## 📄 License
-MIT License — See LICENSE file for details
-
-## 🤝 Contributing
-Contributions welcome! Please open an issue or pull request with:
-1. Benchmark results from your Hindi dataset
-2. Improvements to Q2 number normalization heuristics
-3. Additional Devanagari spell-check vocabulary
-
----
-
-## ⚠️ Known Limitations & Future Work
-
-### Current Limitations
-- **Non-native speakers:** WER degrades by ~6-8% for accented Hindi (Hindustani vs. regional variants)
-- **Code-mixed content:** Mixed Hindi-English segments see 3-4% higher WER
-- **Real-time constraints:** Inference on CPU requires optimization for production deployment
-
-### Planned Enhancements
-- [ ] **Multilingual extension:** Extend to other Indic scripts (Tamil, Telugu, Kannada)
-- [ ] **Streaming ASR:** Implement online decoding for live transcription
-- [ ] **Speaker diarization:** Integrate pyannote.audio for multi-speaker separation
-- [ ] **Confidence calibration:** Temperature scaling for better uncertainty estimates
-- [ ] **FastConformer baseline:** Benchmark against recent efficient ASR architectures
-
----
-
-## 📧 Support & Feedback
-
-For issues, questions, or dataset contributions, please contact or open a GitHub issue. 
-
-**Dataset Contributions:** If you have Hindi audio with ground-truth transcriptions, we welcome contributions to expand the evaluation corpus beyond Josh Talks.
-
----
-
-*Last Updated: 2024 | Maintained with ❤️ for Indian AI & ASR Community*
